@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net"
 	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -35,9 +36,15 @@ func NewClient(id int) (Client, error) {
 	}
 
 	// Enable broadcast on the socket
-	err = client.SetReadBuffer(1024 * 1024)
+	file, err := client.File()
 	if err != nil {
 		return Client{}, err
+	}
+	defer file.Close()
+
+	err = syscall.SetsockoptInt(int(file.Fd()), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
+	if err != nil {
+		return Client{}, fmt.Errorf("failed to enable broadcast: %w", err)
 	}
 
 	fmt.Printf("Client %d started\n", id)
