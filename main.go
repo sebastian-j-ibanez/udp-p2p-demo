@@ -24,6 +24,8 @@ type Client struct {
 	Conn *net.UDPConn
 }
 
+const MulticastAddr = "224.0.0.251" // mDNS multicast address
+
 func NewClient(id int) (Client, error) {
 	addr := net.UDPAddr{
 		IP:   net.IPv4zero,
@@ -32,6 +34,21 @@ func NewClient(id int) (Client, error) {
 	client, err := net.ListenUDP("udp4", &addr)
 	if err != nil {
 		return Client{}, err
+	}
+
+	// Join multicast group
+	multicastAddr := net.ParseIP(MulticastAddr)
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return Client{}, err
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagMulticast != 0 {
+			if err := client.JoinGroup(&iface, &net.UDPAddr{IP: multicastAddr}); err == nil {
+				fmt.Printf("Client %d joined multicast group on %s\n", id, iface.Name)
+			}
+		}
 	}
 
 	fmt.Printf("Client %d started\n", id)
@@ -174,13 +191,11 @@ func (c *Client) Respond(addr *net.UDPAddr) error {
 
 // Broadcast data until stop flag is received
 func (c *Client) Broadcast(stopCast chan bool) {
-	broadcastIP, err := getBroadcastAddr()
-	if err != nil {
-		fmt.Printf("Client %d: error getting broadcast address: %s\n", c.Id, err.Error())
-		return
+	multicastAddr := &net.UDPAddr{
+		IP:   net.ParseIP(MulticastAddr),
+		Port: DefaultPort,
 	}
-	broadcastAddr := &net.UDPAddr{IP: broadcastIP, Port: DefaultPort}
-	fmt.Printf("Client %d: Broadcasting to %s\n", c.Id, broadcastAddr.String())
+	fmt.Printf("Client %d: Broadcasting to multicast %s\n", c.Id, multicastAddr.String())
 	ticker := time.NewTicker(time.Millisecond * 500)
 	defer ticker.Stop()
 
@@ -192,11 +207,11 @@ func (c *Client) Broadcast(stopCast chan bool) {
 			return
 		case <-ticker.C:
 			data := []byte(strconv.Itoa(c.Id))
-			n, err := c.Conn.WriteToUDP(data, broadcastAddr)
+			n, err := c.Conn.WriteToUDP(data, multicastAddr)
 			if err != nil {
 				fmt.Printf("Client %d: broadcast error: %s\n", c.Id, err.Error())
 			} else {
-				fmt.Printf("Client %d: Sent %d bytes to %s\n", c.Id, n, broadcastAddr.String())
+				fmt.Printf("Client %d: Sent %d bytes to %s\n", c.Id, n, multicastAddr.String())
 			}
 		}
 	}
