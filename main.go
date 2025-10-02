@@ -35,18 +35,6 @@ func NewClient(id int) (Client, error) {
 		return Client{}, err
 	}
 
-	// Enable broadcast on the socket
-	file, err := client.File()
-	if err != nil {
-		return Client{}, err
-	}
-	defer file.Close()
-
-	err = syscall.SetsockoptInt(int(file.Fd()), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
-	if err != nil {
-		return Client{}, fmt.Errorf("failed to enable broadcast: %w", err)
-	}
-
 	fmt.Printf("Client %d started\n", id)
 	return Client{Id: id, Conn: client}, nil
 }
@@ -59,13 +47,22 @@ func (c *Client) Run() error {
 	go c.Broadcast(stopCast)
 
 	// Try to read from Socket, ignoring our own broadcasts
-	fmt.Printf("Client %d: Listening for peer broadcasts...\n", c.Id)
+	fmt.Printf("Client %d: Listening for peer broadcasts on %s...\n", c.Id, c.Conn.LocalAddr().String())
 	var peerId int
 	var addr *net.UDPAddr
 	msg := make([]byte, 64)
+
+	// Set a read timeout to periodically check if we're receiving anything
+	c.Conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+
 	for {
 		n, a, err := c.Conn.ReadFromUDP(msg)
 		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				fmt.Printf("Client %d: No broadcasts received in last 2 seconds, still listening...\n", c.Id)
+				c.Conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+				continue
+			}
 			return err
 		}
 
@@ -88,6 +85,9 @@ func (c *Client) Run() error {
 		fmt.Printf("Client %d: Found peer %d, starting handshake\n", c.Id, peerId)
 		break
 	}
+
+	// Clear the deadline
+	c.Conn.SetReadDeadline(time.Time{})
 
 	// Stop broadcasting when connection is made
 	stopCast <- true
@@ -185,6 +185,7 @@ func (c *Client) Broadcast(stopCast chan bool) {
 	ticker := time.NewTicker(time.Millisecond * 500)
 	defer ticker.Stop()
 
+	fmt.Printf("Client %d: Ticker created, entering broadcast loop\n", c.Id)
 	for {
 		select {
 		case <-stopCast:
@@ -192,9 +193,11 @@ func (c *Client) Broadcast(stopCast chan bool) {
 			return
 		case <-ticker.C:
 			data := []byte(strconv.Itoa(c.Id))
-			_, err := c.Conn.WriteToUDP(data, broadcastAddr)
+			n, err := c.Conn.WriteToUDP(data, broadcastAddr)
 			if err != nil {
 				fmt.Printf("Client %d: broadcast error: %s\n", c.Id, err.Error())
+			} else {
+				fmt.Printf("Client %d: Sent %d bytes to %s\n", c.Id, n, broadcastAddr.String())
 			}
 		}
 	}
