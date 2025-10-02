@@ -59,6 +59,7 @@ func (c *Client) Run() error {
 
 	// Stop broadcasting when connection is made
 	stopCast <- true
+	time.Sleep(time.Millisecond * 100) // Wait for broadcast to fully stop
 
 	// Check to see which
 	if peerId < c.Id {
@@ -148,19 +149,19 @@ func (c *Client) Broadcast(stopCast chan bool) {
 		return
 	}
 	broadcastAddr := &net.UDPAddr{IP: broadcastIP, Port: DefaultPort}
+	ticker := time.NewTicker(time.Millisecond * 500)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case stop := <-stopCast:
-			if stop {
-				return
-			}
-		default:
+		case <-stopCast:
+			return
+		case <-ticker.C:
 			data := []byte(strconv.Itoa(c.Id))
 			_, err := c.Conn.WriteToUDP(data, broadcastAddr)
 			if err != nil {
 				fmt.Printf("error: %s", err.Error())
 			}
-			time.Sleep(time.Millisecond * 500)
 		}
 	}
 }
