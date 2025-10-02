@@ -142,7 +142,12 @@ func (c *Client) Respond(addr *net.UDPAddr) error {
 
 // Broadcast data until stop flag is received
 func (c *Client) Broadcast(stopCast chan bool) {
-	broadcastAddr := &net.UDPAddr{IP: net.IPv4bcast, Port: DefaultPort}
+	broadcastIP, err := getBroadcastAddr()
+	if err != nil {
+		fmt.Printf("error getting broadcast address: %s\n", err.Error())
+		return
+	}
+	broadcastAddr := &net.UDPAddr{IP: broadcastIP, Port: DefaultPort}
 	for {
 		select {
 		case stop := <-stopCast:
@@ -158,4 +163,45 @@ func (c *Client) Broadcast(stopCast chan bool) {
 		}
 		time.Sleep(time.Millisecond * 500)
 	}
+}
+
+// getBroadcastAddr finds the broadcast address for the local network
+func getBroadcastAddr() (net.IP, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, iface := range ifaces {
+		// Skip loopback and down interfaces
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+
+			ip := ipNet.IP.To4()
+			if ip == nil {
+				continue // Skip IPv6
+			}
+
+			// Calculate broadcast address: IP | ^Mask
+			broadcast := make(net.IP, len(ip))
+			for i := range ip {
+				broadcast[i] = ip[i] | ^ipNet.Mask[i]
+			}
+			return broadcast, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no suitable network interface found")
 }
