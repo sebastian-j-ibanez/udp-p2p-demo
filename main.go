@@ -52,6 +52,7 @@ func (c *Client) Run() error {
 	go c.Broadcast(stopCast)
 
 	// Try to read from Socket, ignoring our own broadcasts
+	fmt.Printf("Client %d: Listening for peer broadcasts...\n", c.Id)
 	var peerId int
 	var addr *net.UDPAddr
 	msg := make([]byte, 64)
@@ -63,16 +64,21 @@ func (c *Client) Run() error {
 
 		id, err := strconv.Atoi(string(msg[:n]))
 		if err != nil {
+			fmt.Printf("Client %d: Received invalid message: %s\n", c.Id, string(msg[:n]))
 			continue // Invalid message, keep listening
 		}
 
+		fmt.Printf("Client %d: Received broadcast from ID %d at %s\n", c.Id, id, a.String())
+
 		// Ignore our own broadcasts
 		if id == c.Id {
+			fmt.Printf("Client %d: Ignoring own broadcast\n", c.Id)
 			continue
 		}
 
 		peerId = id
 		addr = a
+		fmt.Printf("Client %d: Found peer %d, starting handshake\n", c.Id, peerId)
 		break
 	}
 
@@ -164,22 +170,24 @@ func (c *Client) Respond(addr *net.UDPAddr) error {
 func (c *Client) Broadcast(stopCast chan bool) {
 	broadcastIP, err := getBroadcastAddr()
 	if err != nil {
-		fmt.Printf("error getting broadcast address: %s\n", err.Error())
+		fmt.Printf("Client %d: error getting broadcast address: %s\n", c.Id, err.Error())
 		return
 	}
 	broadcastAddr := &net.UDPAddr{IP: broadcastIP, Port: DefaultPort}
+	fmt.Printf("Client %d: Broadcasting to %s\n", c.Id, broadcastAddr.String())
 	ticker := time.NewTicker(time.Millisecond * 500)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-stopCast:
+			fmt.Printf("Client %d: Stopping broadcast\n", c.Id)
 			return
 		case <-ticker.C:
 			data := []byte(strconv.Itoa(c.Id))
 			_, err := c.Conn.WriteToUDP(data, broadcastAddr)
 			if err != nil {
-				fmt.Printf("error: %s", err.Error())
+				fmt.Printf("Client %d: broadcast error: %s\n", c.Id, err.Error())
 			}
 		}
 	}
