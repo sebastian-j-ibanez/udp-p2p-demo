@@ -31,10 +31,16 @@ func NewClient(id int) (Client, error) {
 	}
 	client, err := net.ListenUDP("udp", &addr)
 	if err != nil {
-		fmt.Printf("error: %s", err.Error())
-		return Client{}, nil
+		return Client{}, err
 	}
 
+	// Enable broadcast on the socket
+	err = client.SetReadBuffer(1024 * 1024)
+	if err != nil {
+		return Client{}, err
+	}
+
+	fmt.Printf("Client %d started\n", id)
 	return Client{Id: id, Conn: client}, nil
 }
 
@@ -45,16 +51,29 @@ func (c *Client) Run() error {
 	stopCast := make(chan bool)
 	go c.Broadcast(stopCast)
 
-	// Try to read from Socket
+	// Try to read from Socket, ignoring our own broadcasts
+	var peerId int
+	var addr *net.UDPAddr
 	msg := make([]byte, 64)
-	n, addr, err := c.Conn.ReadFromUDP(msg)
-	if err != nil {
-		return err
-	}
+	for {
+		n, a, err := c.Conn.ReadFromUDP(msg)
+		if err != nil {
+			return err
+		}
 
-	peerId, err := strconv.Atoi(string(msg[:n]))
-	if err != nil {
-		return err
+		id, err := strconv.Atoi(string(msg[:n]))
+		if err != nil {
+			continue // Invalid message, keep listening
+		}
+
+		// Ignore our own broadcasts
+		if id == c.Id {
+			continue
+		}
+
+		peerId = id
+		addr = a
+		break
 	}
 
 	// Stop broadcasting when connection is made
