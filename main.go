@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"net"
 	"strconv"
-	"syscall"
 	"time"
 )
 
@@ -30,7 +29,7 @@ func NewClient(id int) (Client, error) {
 		IP:   net.IPv4zero,
 		Port: DefaultPort,
 	}
-	client, err := net.ListenUDP("udp", &addr)
+	client, err := net.ListenUDP("udp4", &addr)
 	if err != nil {
 		return Client{}, err
 	}
