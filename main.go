@@ -17,7 +17,7 @@ func main() {
 	client.Run()
 }
 
-const DefaultPort = 50000
+const DefaultPort = 9999
 
 type Client struct {
 	Id   int
