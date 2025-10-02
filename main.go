@@ -160,8 +160,8 @@ func (c *Client) Broadcast(stopCast chan bool) {
 			if err != nil {
 				fmt.Printf("error: %s", err.Error())
 			}
+			time.Sleep(time.Millisecond * 500)
 		}
-		time.Sleep(time.Millisecond * 500)
 	}
 }
 
